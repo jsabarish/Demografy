@@ -1,0 +1,20 @@
+# Core AI & LangChain
+langchain==0.3.25
+langchain-community==0.3.23
+langchain-google-genai==2.1.4
+langsmith==0.3.42
+
+# Google Cloud / BigQuery
+google-cloud-bigquery==3.31.0
+sqlalchemy-bigquery==1.16.0
+sqlalchemy==2.0.40
+
+# Frontend
+streamlit==1.45.0
+
+# Data
+pandas==2.2.3
+pyarrow==20.0.0
+
+# Environment
+python-dotenv==1.1.0

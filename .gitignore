@@ -1,0 +1,31 @@
+# Secrets — NEVER commit these
+.env
+*.json
+
+# But DO commit the template and package files
+!.env.template
+!package.json
+!package-lock.json
+
+# Internal source documents (for our use only)
+Source/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Mac
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Streamlit cache
+.streamlit/secrets.toml
