@@ -74,7 +74,7 @@ def _create_agent():
     return agent
 
 
-def ask(question: str) -> tuple[str, str | None]:
+def ask(question: str, callbacks=None) -> tuple[str, str | None]:
     """
     Main function — takes a plain English question and returns the answer + the SQL used.
 
@@ -82,6 +82,8 @@ def ask(question: str) -> tuple[str, str | None]:
 
     Args:
         question (str): The user's natural language question.
+        callbacks (list, optional): LangChain callbacks e.g. StreamlitCallbackHandler
+                                    to stream agent steps live into the UI.
 
     Returns:
         tuple: (answer, sql_query)
@@ -98,7 +100,8 @@ def ask(question: str) -> tuple[str, str | None]:
         _agent = _create_agent()
 
     # Run the agent — triggers SQL generation + execution + formatting
-    result = _agent.invoke({"input": question})
+    # callbacks streams each step live to the UI if provided
+    result = _agent.invoke({"input": question}, config={"callbacks": callbacks or []})
 
     # Extract the SQL query from intermediate steps
     sql_query = None

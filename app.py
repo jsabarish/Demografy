@@ -200,17 +200,24 @@ with right:
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            with st.spinner("Analysing suburb data..."):
-                sql_query = None
+            sql_query = None
+            try:
+                from agent.sql_agent import ask
+                from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+                steps_container = st.container()
+                st_callback = StreamlitCallbackHandler(
+                    steps_container,
+                    expand_new_thoughts=True,
+                    collapse_completed_thoughts=True,
+                )
+                answer, sql_query = ask(question, callbacks=[st_callback])
+            except Exception:
+                # BigQuery not connected yet — fall back to Gemini-only mode
                 try:
-                    from agent.sql_agent import ask
-                    answer, sql_query = ask(question)
-                except Exception:
-                    # BigQuery not connected yet — fall back to Gemini-only mode
-                    try:
-                        import os
-                        from langchain_google_genai import ChatGoogleGenerativeAI
-                        from langchain_core.messages import SystemMessage, HumanMessage
+                    import os
+                    from langchain_google_genai import ChatGoogleGenerativeAI
+                    from langchain_core.messages import SystemMessage, HumanMessage
+                    with st.spinner("Thinking..."):
                         llm = ChatGoogleGenerativeAI(
                             model="gemini-2.5-flash",
                             google_api_key=os.getenv("GEMINI_API_KEY"),
@@ -226,9 +233,9 @@ with right:
                             )),
                             HumanMessage(content=question),
                         ])
-                        answer = response.content + "\n\n> ⚠️ *Live data not connected yet — this answer is from general AI knowledge, not the Demografy database.*"
-                    except Exception as e2:
-                        answer = f"⚠️ Could not get a response.\n\n**Error:** {str(e2)}"
+                    answer = response.content + "\n\n> ⚠️ *Live data not connected yet — this answer is from general AI knowledge, not the Demografy database.*"
+                except Exception as e2:
+                    answer = f"⚠️ Could not get a response.\n\n**Error:** {str(e2)}"
             st.markdown(answer)
             if sql_query:
                 with st.expander("🔍 View SQL Query"):

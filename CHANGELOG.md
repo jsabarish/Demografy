@@ -69,3 +69,15 @@ Format: `[vX.Y.Z] — YYYY-MM-DD — Description`
 ### Notes
 - LangSmith is the company account — all query traces visible to Demografy team
 - "Migratory - Offshore - Shipping" and "No usual address" are ABS statistical categories that may appear in diversity results — not real suburbs
+
+---
+
+## [v0.4.0] — 2026-04-12 — Live Agent Steps + Code Explanation Doc
+
+### Added
+- `app.py` — live agent step streaming using `StreamlitCallbackHandler` (each reasoning step appears in the UI as the agent thinks)
+- `HOW_IT_WORKS.md` — plain-English explanation of the entire codebase for team onboarding
+
+### Changed
+- `agent/sql_agent.py` — `ask()` now accepts optional `callbacks` parameter for streaming steps to the UI
+- `app.py` — removed `st.spinner` wrapper from BigQuery path; steps now stream live instead
