@@ -147,6 +147,15 @@ def load_global_css() -> None:
             .badge-pro { background: linear-gradient(90deg,#f7971e,#ffd200); color:#333; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
             .badge-basic { background: linear-gradient(90deg,#8b5cf6,#7c3aed); color:white; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
             .badge-free { background:#f3f4f6; color:#6b7280; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
+
+            /* Bridge component is functional only: keep it out of layout flow */
+            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_bridge"]) {
+                margin: 0 !important;
+                padding: 0 !important;
+                min-height: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+            }
         </style>
         """,
         unsafe_allow_html=True,

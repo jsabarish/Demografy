@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Demografy chat bridge</title>
+    <style>
+        html, body { margin: 0; padding: 0; background: transparent; height: 0; overflow: hidden; }
+    </style>
+</head>
+<body>
+<script>
+    /*
+     * Demografy chat bridge.
+     *
+     * Listens for window-level postMessage events of the shape:
+     *   { demografy_chat: "ask", question: string, ts: number }
+     * and forwards them to Python via Streamlit's component value channel.
+     */
+
+    (function () {
+        const READY = "streamlit:componentReady";
+        const SET_VALUE = "streamlit:setComponentValue";
+        const SET_HEIGHT = "streamlit:setFrameHeight";
+
+        function send(type, payload) {
+            window.parent.postMessage(
+                Object.assign({ isStreamlitMessage: true, type: type }, payload || {}),
+                "*"
+            );
+        }
+
+        send(READY, { apiVersion: 1 });
+        send(SET_HEIGHT, { height: 0 });
+
+        let lastTs = null;
+
+        window.addEventListener("message", function (event) {
+            const data = event && event.data;
+            if (!data || data.demografy_chat !== "ask") return;
+
+            const question = (data.question || "").toString().trim();
+            const ts = Number(data.ts) || Date.now();
+            if (!question) return;
+            if (lastTs === ts) return;
+            lastTs = ts;
+
+            send(SET_VALUE, {
+                value: { question: question, ts: ts },
+                dataType: "json",
+            });
+        });
+    })();
+</script>
+</body>
+</html>

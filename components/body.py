@@ -5,6 +5,8 @@ the same iframe (its JS toggles the widget locally). The actual chat assets
 live in `components/chatbox.py` to keep ownership clear.
 """
 
+from typing import Iterable, Optional
+
 import streamlit.components.v1 as components
 
 from components.chatbox import get_chatbox_assets
@@ -386,8 +388,18 @@ _BODY_HTML = """
 """
 
 
-def render_body(show_chat_widget: bool) -> None:
-    chat = get_chatbox_assets(show_chat_widget)
+def render_body(
+    show_chat_widget: bool,
+    messages: Optional[Iterable[dict]] = None,
+    pending: bool = False,
+    limit_reached: bool = False,
+) -> None:
+    chat = get_chatbox_assets(
+        show=show_chat_widget,
+        messages=messages,
+        pending=pending,
+        limit_reached=limit_reached,
+    )
 
     page_html = f"""
         <style>
