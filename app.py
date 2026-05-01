@@ -3,15 +3,19 @@ Demografy Insights Chatbot - Streamlit App
 Run with: streamlit run app.py
 """
 
+import os
+import uuid
 import streamlit as st
 import streamlit.components.v1 as components
 import json
 import threading
 import time
 from dotenv import load_dotenv
+from datetime import date, timedelta
 
 load_dotenv()
 
+# ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Demografy Insights",
     page_icon="D",
@@ -19,17 +23,22 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CSS
+# ══════════════════════════════════════════════════════════════════════════════
+def load_css():
+    st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800;900&display=swap');
 
     html, body, .stApp, [class*="css"] {
         font-family: 'Open Sans', sans-serif;
     }
 
     #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    footer     {visibility: hidden;}
+    header     {visibility: hidden;}
 
     .stApp {
         background: #f7f5fb;
@@ -37,215 +46,324 @@ st.markdown("""
     }
 
     .block-container {
-        padding-top: 1.2rem;
-        padding-bottom: 0.5rem;
-        padding-left: 1.25rem;
-        padding-right: 1.25rem;
+        padding-top: 1rem;
+        padding-bottom: 0;
+        padding-left: 1rem;
+        padding-right: 1rem;
+        max-width: 100%;
     }
 
-    /* Left panel - expanded */
-    .left-panel {
-        background: #272d2d;
-        border-radius: 10px;
-        padding: 30px 24px;
-        height: 92vh;
-        border: 1px solid rgba(255,255,255,0.08);
-        box-shadow: 0 18px 45px rgba(39,45,45,0.12);
+    /* ═══ SIDEBAR COLUMN (only in 2-column main layout, not login's 3-column layout) ═══ */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(2):last-child) > [data-testid="stColumn"]:first-child {
+        background: linear-gradient(160deg, #5e17eb 0%, #9a66ee 100%);
+        border-radius: 16px;
     }
-    .left-title {
-        color: white;
-        font-size: 1.55rem;
-        font-weight: 800;
-        line-height: 1.2;
-        margin-bottom: 12px;
-        font-family: 'Open Sans', sans-serif;
-    }
-    .left-subtitle {
-        color: rgba(255,255,255,0.72);
-        font-size: 0.82rem;
-        line-height: 1.5;
-        margin-bottom: 22px;
-    }
-    .left-metric {
-        border-top: 1px solid rgba(255,255,255,0.12);
-        padding: 12px 0;
-    }
-    .left-metric-value {
-        color: #d8f2d0;
-        font-size: 1rem;
-        font-weight: 800;
-    }
-    .left-metric-label {
-        color: rgba(255,255,255,0.58);
-        font-size: 0.75rem;
-    }
-    .left-examples {
-        color: rgba(255,255,255,0.56);
-        font-size: 0.72rem;
-        margin-top: 26px;
-        line-height: 1.8;
-    }
-
-    /* Left panel - collapsed */
-    .left-collapsed {
-        background: #272d2d;
-        border-radius: 10px;
-        padding: 24px 8px;
-        height: 92vh;
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(2):last-child) > [data-testid="stColumn"]:first-child > [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] {
+        padding: 16px 8px 16px;
+        min-height: 92vh;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 12px;
     }
 
-    /* Login screen */
-    .login-container {
+    /* Sidebar icon buttons */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(2):last-child) > [data-testid="stColumn"]:first-child button {
+        background: transparent !important;
+        color: rgba(255,255,255,0.75) !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-size: 1.4rem !important;
+        padding: 10px 8px !important;
+        width: 100% !important;
+        text-align: center !important;
+        justify-content: center !important;
+        transition: background 0.15s, color 0.15s !important;
+        line-height: 1 !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(2):last-child) > [data-testid="stColumn"]:first-child button:hover {
+        background: rgba(255,255,255,0.18) !important;
+        color: white !important;
+    }
+
+    /* ═══ SIDEBAR ICON LOGO ═══ */
+    .sb-icon-logo {
+        color: white;
+        font-size: 1.5rem;
+        font-weight: 900;
+        text-align: center;
+        padding: 8px 0 20px;
+        letter-spacing: -1px;
+        width: 100%;
+    }
+
+    /* ═══ EMPTY STATE ═══ */
+    .empty-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 58vh;
+        text-align: center;
+        padding: 20px;
+    }
+    .empty-orb      { font-size: 4rem; margin-bottom: 20px; }
+    .empty-greeting { font-size: 1.9rem; font-weight: 800; color: #1a1a2e; margin-bottom: 8px; }
+    .empty-sub      { font-size: 1rem; color: #888; margin-bottom: 36px; }
+
+    /* Suggestion cards */
+    .card-wrap button {
+        background: #fafafa !important;
+        color: #333 !important;
+        border: 1px solid #ebebeb !important;
+        border-radius: 14px !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+        padding: 18px 16px !important;
+        text-align: left !important;
+        min-height: 80px !important;
+        justify-content: flex-start !important;
+        white-space: normal !important;
+        line-height: 1.4 !important;
+    }
+    .card-wrap button:hover {
+        background: #f3eeff !important;
+        border-color: #c9a5ff !important;
+        color: #5e17eb !important;
+    }
+
+    /* ═══ COUNTER PILL (fixed above chat input) ═══ */
+    .counter-fixed {
+        position: fixed;
+        bottom: 72px;
+        right: 24px;
+        z-index: 999;
+        background: rgba(255,255,255,0.92);
+        border: 1px solid #e5e5e5;
+        border-radius: 20px;
+        padding: 4px 14px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .c-green  { color: #5e17eb; }
+    .c-yellow { color: #d97706; }
+    .c-red    { color: #dc2626; }
+
+    /* ═══ LOGIN ═══ */
+    .login-wrap {
         max-width: 420px;
         margin: 80px auto;
-        padding: 40px;
+        padding: 42px;
         background: white;
-        border-radius: 12px;
-        border: 1px solid #eee9fb;
-        box-shadow: 0 18px 45px rgba(39,45,45,0.08);
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(94,23,235,0.12);
         text-align: center;
     }
-    .login-logo {
-        font-size: 2rem;
-        font-weight: 900;
-        letter-spacing: -1px;
-        margin-bottom: 8px;
-        font-family: 'Open Sans', sans-serif;
-    }
-    .login-subtitle {
-        color: #888;
-        font-size: 0.85rem;
-        margin-bottom: 28px;
-    }
+    .login-logo { font-size: 2rem; font-weight: 900; letter-spacing: -1px; margin-bottom: 8px; }
+    .login-sub  { color: #999; font-size: 0.85rem; margin-bottom: 28px; }
 
-    /* Tier badge */
-    .tier-badge-pro {
-        background: #d8f2d0;
-        color: #333;
-        padding: 3px 10px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        display: inline-block;
-        margin-left: 6px;
-    }
-    .tier-badge-basic {
-        background: #9a66ee;
-        color: white;
-        padding: 3px 10px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        display: inline-block;
-        margin-left: 6px;
-    }
-    .tier-badge-free {
-        background: #eee;
-        color: #666;
-        padding: 3px 10px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 700;
-        display: inline-block;
-        margin-left: 6px;
-    }
-
-    /* Question counter */
-    .question-counter {
-        background: rgba(94,23,235,0.07);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-top: 12px;
-        font-size: 0.82rem;
-        color: #5e17eb;
-        font-weight: 600;
-    }
-
-    div[data-testid="column"] > div > div > div > button {
-        background: transparent;
-        border: none;
-        color: #272d2d;
-        font-size: 1.1rem;
-        cursor: pointer;
-    }
-
-    div[data-testid="stChatMessage"] {
-        border-radius: 10px;
-    }
+    /* ═══ TIER BADGES ═══ */
+    .badge-pro   { background:linear-gradient(90deg,#f7971e,#ffd200); color:#333; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
+    .badge-basic { background:linear-gradient(90deg,#5e17eb,#9a66ee); color:white; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
+    .badge-free  { background:#eee; color:#666; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
 </style>
 """, unsafe_allow_html=True)
 
-# Session state initialisation
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "panel_open" not in st.session_state:
-    st.session_state.panel_open = True
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "question_count" not in st.session_state:
-    st.session_state.question_count = 0
-if "last_query_context" not in st.session_state:
-    st.session_state.last_query_context = None
 
-# Attempt to restore session from URL query param (used as a bridge from browser localStorage)
-try:
-    params = st.experimental_get_query_params()
-    if "user" in params and st.session_state.user is None:
-        try:
-            from auth.rbac import get_user
-            restored = get_user(params["user"][0])
-            if restored is not None:
-                st.session_state.user = restored
-        except Exception:
-            pass
-except Exception:
-    pass
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+def _save_current(user_id: str):
+    """Save the current active session to disk if it has messages."""
+    from utils.chat_history import save_session
+    msgs = st.session_state.get("messages", [])
+    if msgs:
+        title = msgs[0]["content"][:60]
+        save_session(user_id, st.session_state.session_id, title, msgs)
 
-# If browser localStorage has the user, inject JS to add it to the URL so server-side can pick it up
-components.html("""
-<script>
-;(function(){
-    try{
-        const stored = localStorage.getItem('demografy_user');
-        const urlParams = new URLSearchParams(window.location.search);
-        if(stored && !urlParams.has('user')){
-            try{
-                const user = JSON.parse(stored);
-                if(user && user.user_id){
-                    urlParams.set('user', user.user_id);
-                    // update URL without creating a new history entry
-                    window.location.search = urlParams.toString();
-                }
-            }catch(e){}
-        }
-    }catch(e){}
-})();
-</script>
-""", height=0)
 
-# Login screen
-if st.session_state.user is None:
+# ══════════════════════════════════════════════════════════════════════════════
+# MODAL — User account info
+# ══════════════════════════════════════════════════════════════════════════════
+@st.dialog("My Account")
+def show_user_modal(user: dict, question_count: int, limit: int, tier: str):
+    remaining = limit - question_count
+    pct = min(question_count / max(limit, 1), 1.0)
+    tier_emoji = {"pro": "🥇", "basic": "🥈", "free": "🥉"}.get(tier, "")
+
+    st.markdown(
+        f"**{user['user_id']}** &nbsp; <span class='badge-{tier}'>{tier.upper()} {tier_emoji}</span>",
+        unsafe_allow_html=True,
+    )
+    st.caption(user.get("email", ""))
+    st.divider()
+
+    c1, c2 = st.columns(2)
+    c1.metric("Questions Used", question_count)
+    c2.metric("Remaining", remaining)
+    st.progress(pct, text=f"{question_count} / {limit} questions this session")
+
+    if remaining <= 0:
+        st.error("Question limit reached for this session.")
+    elif remaining <= 5:
+        st.warning(f"⚠️ Only {remaining} question{'s' if remaining != 1 else ''} left.")
+    else:
+        st.success(f"✅ {remaining} questions remaining.")
+
+    st.divider()
+    if st.button("🚪  Sign Out", type="primary", use_container_width=True):
+        print(f"[LOGOUT] user_id={user['user_id']} | questions={question_count}")
+        for key in ["user", "question_count", "messages", "session_id", "pending_question"]:
+            st.session_state.pop(key, None)
+        st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MODAL — Chat history
+# ══════════════════════════════════════════════════════════════════════════════
+@st.dialog("Chat History")
+def show_history_modal(user: dict):
+    from utils.chat_history import load_history
+    sessions = load_history(user["user_id"])
+
+    if not sessions:
+        st.info("No previous chats yet. Start a conversation!")
+        return
+
+    today_str     = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+
+    grouped = {}
+    for s in sessions:
+        d = s.get("date", "")
+        label = "Today" if d == today_str else "Yesterday" if d == yesterday_str else d
+        grouped.setdefault(label, []).append(s)
+
+    for group_label, group_sessions in list(grouped.items())[:7]:
+        st.markdown(f"**{group_label}**")
+        for s in group_sessions[:5]:
+            title = s.get("title", "Untitled")
+            short = (title[:55] + "…") if len(title) > 55 else title
+            if st.button(f"· {short}", key=f"hm_{s['session_id']}", use_container_width=True):
+                _save_current(user["user_id"])
+                st.session_state.messages   = s["messages"]
+                st.session_state.session_id = s["session_id"]
+                st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPONENT — Sidebar
+# ══════════════════════════════════════════════════════════════════════════════
+def render_sidebar(user: dict, question_count: int, limit: int, tier: str):
+    # Demografy "D" logo mark
+    st.markdown('<div class="sb-icon-logo">D</div>', unsafe_allow_html=True)
+
+    # ✏️ New Chat
+    if st.button("✏️", key="new_chat", help="Start New Chat", use_container_width=True):
+        _save_current(user["user_id"])
+        st.session_state.messages = []
+        st.session_state.session_id = str(uuid.uuid4())
+        st.rerun()
+
+    # 🕐 History → dialog
+    if st.button("🕐", key="history", help="Chat History", use_container_width=True):
+        show_history_modal(user)
+
+    # Spacer pushes user icon to bottom
+    st.markdown("<div style='flex:1; min-height:20px;'></div>", unsafe_allow_html=True)
+
+    # 👤 User account → modal
+    if st.button("👤", key="user_footer", help=user["user_id"], use_container_width=True):
+        show_user_modal(user, question_count, limit, tier)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPONENT — Empty state (no messages yet)
+# ══════════════════════════════════════════════════════════════════════════════
+def render_empty_state() -> str | None:
+    """Renders the centered empty state. Returns suggestion text if a card was clicked."""
+    from datetime import datetime
+    hour = datetime.now().hour
+    greeting = "Good Morning" if hour < 12 else "Good Afternoon" if hour < 17 else "Good Evening"
+    name = st.session_state.user["user_id"].replace("_", " ").title()
+
+    st.markdown(f"""
+    <div class="empty-wrap">
+        <div class="empty-orb">🔮</div>
+        <div class="empty-greeting">{greeting}, {name}</div>
+        <div class="empty-sub">What suburb are you <span style="color:#5e17eb;font-weight:700;">exploring today?</span></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    suggestions = [
+        ("🏘️", "Top 3 diverse suburbs in Victoria?"),
+        ("📊", "Average prosperity score in NSW?"),
+        ("🏡", "Cheapest rentals in Queensland?"),
+        ("👨‍👩‍👧", "Best suburbs for young families in ACT?"),
+    ]
+
+    col1, col2 = st.columns(2)
+    for i, (icon, text) in enumerate(suggestions):
+        with (col1 if i % 2 == 0 else col2):
+            st.markdown('<div class="card-wrap">', unsafe_allow_html=True)
+            if st.button(f"{icon}  {text}", key=f"sug_{i}", use_container_width=True):
+                return text
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPONENT — Chat messages
+# ══════════════════════════════════════════════════════════════════════════════
+def render_chat_messages(messages: list):
+    for msg in messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("sql"):
+                with st.expander("🔍 View SQL Query"):
+                    st.code(msg["sql"], language="sql")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPONENT — Counter pill (fixed near chat input)
+# ══════════════════════════════════════════════════════════════════════════════
+def render_counter(question_count: int, limit: int, tier: str):
+    remaining = limit - question_count
+    if remaining <= 0:
+        cls, label = "c-red", "❌ limit reached"
+    elif remaining <= 3:
+        cls, label = "c-red", f"🔴 {remaining} left"
+    elif remaining <= int(limit * 0.25):
+        cls, label = "c-yellow", f"🟡 {remaining} left"
+    else:
+        cls, label = "c-green", f"🟢 {remaining} left"
+
+    st.markdown(
+        f'<div class="counter-fixed"><span class="{cls}">{label} · {tier.upper()}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPONENT — Login screen
+# ══════════════════════════════════════════════════════════════════════════════
+def render_login():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         st.markdown("""
-        <div class="login-container">
-            <div class="login-logo">
-                D<span style="color:#5e17eb;">emografy</span>
-            </div>
-            <div class="login-subtitle">Insights Engine - enter your User ID to continue</div>
+        <div class="login-wrap">
+            <div class="login-logo">D<span style="color:#5e17eb;">emografy</span></div>
+            <div class="login-sub">AI Engine — enter your User ID to continue</div>
         </div>
         """, unsafe_allow_html=True)
 
         user_id_input = st.text_input(
             "User ID",
             placeholder="e.g. user_001",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
-
         login_clicked = st.button("Sign In", use_container_width=True, type="primary")
 
         if login_clicked:
@@ -258,39 +376,124 @@ if st.session_state.user is None:
                         user = get_user(user_id_input.strip())
 
                         if user is None:
+                            print(f"[LOGIN] Failed for user_id='{user_id_input.strip()}'")
                             st.error("User not found or account is inactive. Please check your User ID.")
                         else:
-                            st.session_state.user = user
+                            print(f"[LOGIN] {user['user_id']} logged in | tier={user['tier']}")
+                            st.session_state.user         = user
                             st.session_state.question_count = 0
-                            st.session_state.messages = []
-                            st.session_state.last_query_context = None
-                            # Log user data to server console for debugging
-                            print("User logged in:", user)
-                            # Persist minimal user info in browser localStorage and set URL param
-                            try:
-                                user_js = json.dumps({"user_id": user["user_id"], "tier": user.get("tier")})
-                                components.html(
-                                    f"<script>localStorage.setItem('demografy_user', JSON.stringify({user_js})); console.log('Demografy stored user:', {user_js});</script>",
-                                    height=0,
-                                )
-                            except Exception:
-                                pass
-                            try:
-                                st.experimental_set_query_params(user=user["user_id"])
-                            except Exception:
-                                pass
+                            st.session_state.messages      = []
+                            st.session_state.session_id    = str(uuid.uuid4())
                             st.rerun()
                     except Exception as e:
                         st.error(f"Could not connect to user database. Error: {str(e)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HANDLER — Process a question through the agent
+# ══════════════════════════════════════════════════════════════════════════════
+def handle_question(question: str, user: dict, tier: str, limit: int):
+    from utils.chat_history import save_session
+
+    st.session_state.question_count += 1
+    print(f"[QUESTION] user_id={user['user_id']} | tier={tier} | q={st.session_state.question_count}/{limit} | '{question}'")
+
+    st.session_state.messages.append({"role": "user", "content": question, "sql": None})
+
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    sql_query = None
+    answer    = None
+
+    with st.chat_message("assistant"):
+        try:
+            from agent.sql_agent import ask
+            from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+            steps_container = st.container()
+            st_callback = StreamlitCallbackHandler(
+                steps_container,
+                expand_new_thoughts=True,
+                collapse_completed_thoughts=True,
+            )
+            answer, sql_query = ask(question, callbacks=[st_callback])
+            print(f"[AGENT] Response generated | sql={sql_query}")
+        except Exception as agent_err:
+            print(f"[AGENT] Agent failed, falling back to LLM. Error: {agent_err}")
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                from langchain_core.messages import SystemMessage, HumanMessage
+                with st.spinner("Thinking..."):
+                    llm = ChatGoogleGenerativeAI(
+                        model="gemini-2.5-flash",
+                        google_api_key=os.getenv("GEMINI_API_KEY"),
+                        temperature=0,
+                    )
+                    response = llm.invoke([
+                        SystemMessage(content=(
+                            "You are Demografy, an AI assistant specialising in Australian suburb demographics. "
+                            "You have knowledge of ABS census data, suburb statistics, KPIs like diversity index, "
+                            "prosperity score, rental costs, population density, and more. "
+                            "Answer questions helpfully and concisely. "
+                            "Note: live BigQuery data is not yet connected, so answers are based on general knowledge."
+                        )),
+                        HumanMessage(content=question),
+                    ])
+                answer = response.content + "\n\n> ⚠️ *Live data not connected — answer from general AI knowledge.*"
+                print("[LLM FALLBACK] Response generated successfully")
+            except Exception as e2:
+                print(f"[LLM FALLBACK] Also failed. Error: {e2}")
+                answer = f"⚠️ Could not get a response.\n\n**Error:** {str(e2)}"
+
+        if answer:
+            st.markdown(answer)
+            if sql_query:
+                with st.expander("🔍 View SQL Query"):
+                    st.code(sql_query, language="sql")
+
+    st.session_state.messages.append({"role": "assistant", "content": answer or "", "sql": sql_query})
+
+    # Auto-save session after every message
+    save_session(
+        user_id=user["user_id"],
+        session_id=st.session_state.session_id,
+        title=st.session_state.messages[0]["content"][:60],
+        messages=st.session_state.messages,
+    )
+
+    st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+load_css()
+
+# Session state initialisation
+for _key, _default in [
+    ("user",             None),
+    ("question_count",   0),
+    ("messages",         []),
+    ("session_id",       str(uuid.uuid4())),
+    ("pending_question", None),
+]:
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
+
+# ── Login gate ─────────────────────────────────────────────────────────────────
+if st.session_state.user is None:
+    render_login()
     st.stop()
 
-# Logged in - get user info
+# ── Logged-in layout ───────────────────────────────────────────────────────────
 from auth.rbac import get_question_limit, is_limit_reached, should_show_warning
 
-user = st.session_state.user
-tier = user["tier"]
+user           = st.session_state.user
+tier           = user["tier"]
 question_count = st.session_state.question_count
-limit = get_question_limit(tier)
+limit          = get_question_limit(tier)
+messages       = st.session_state.messages
+
 
 # Layout
 if st.session_state.panel_open:
@@ -366,225 +569,38 @@ with left:
                 st.experimental_set_query_params()
             except Exception:
                 pass
-            st.rerun()
 
-    else:
-        if st.button("Expand", help="Expand panel", key="expand"):
-            st.session_state.panel_open = True
-            st.rerun()
+left, right = st.columns([0.18, 3.82])
 
-        st.markdown("""
-        <div class="left-collapsed">
-            <div style="color:white;font-weight:900;font-size:1rem;writing-mode:vertical-rl;
-                        text-orientation:mixed;letter-spacing:2px;margin-top:12px;font-family:'Open Sans',sans-serif;">
-                DEMOGRAFY
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+with left:
+    render_sidebar(user, question_count, limit, tier)
 
-# Right panel
 with right:
-    st.markdown("### Demografy Insights Chat")
-    st.caption("Ask questions about Australian suburb demographics in plain English.")
-    st.divider()
+    # Pick up any pending question from suggestion chips
+    pending = st.session_state.pop("pending_question", None)
 
-    if not st.session_state.messages:
-        st.markdown("""
-        I can help you explore Australian suburb-level demographic insights, including population,
-        prosperity, diversity, migration, education, housing, rental affordability, stability,
-        and family composition.
-
-        You can ask things like:
-
-        - What are the top 5 most diverse suburbs in New South Wales?
-        - What is the average learning level in Victoria?
-        - Show me suburbs with high resident anchor and high resident equity.
-        - Compare average home ownership versus rental access by state.
-        """)
-
-    # Chat history
-    for msg in st.session_state.messages:
-        if msg["role"] == "assistant.progress":
-            continue
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if msg.get("sql"):
-                st.markdown("_Query details hidden for privacy._")
-
-    # Tier limit checks
-    if is_limit_reached(tier, question_count):
-        # Disable input, show upgrade prompt
-        st.error(
-            f"You've reached your **{tier.upper()}** plan limit of **{limit} questions** this session.\n\n"
-            f"Upgrade your plan to continue asking questions."
-        )
-        st.chat_input("Question limit reached - upgrade to continue", disabled=True)
-
+    if not messages:
+        suggestion = render_empty_state()
+        if suggestion:
+            st.session_state.pending_question = suggestion
+            st.rerun()
     else:
-        # Show warning if approaching limit
+        render_chat_messages(messages)
+
+    # Counter pill + chat input
+    if is_limit_reached(tier, question_count):
+        st.error(
+            f"🚫 You've reached your **{tier.upper()}** plan limit of **{limit} questions** this session.\n\n"
+            "Upgrade your plan to continue."
+        )
+        st.chat_input("Question limit reached — upgrade to continue", disabled=True)
+    else:
         if should_show_warning(tier, question_count):
             remaining = limit - question_count
-            st.warning(f"You have **{remaining} question{'s' if remaining != 1 else ''}** remaining on your {tier.upper()} plan this session.")
+            st.warning(f"⚠️ You have **{remaining} question{'s' if remaining != 1 else ''}** remaining this session.")
 
-        # Chat input
-        question = st.chat_input("e.g. What are the top 3 suburbs in Victoria by diversity index?")
+        render_counter(question_count, limit, tier)
+        question = st.chat_input("e.g. What are the top 3 suburbs in Victoria by diversity index?") or pending
 
         if question:
-            st.session_state.question_count += 1
-            st.session_state.messages.append({"role": "user", "content": question})
-
-            with st.chat_message("user"):
-                st.markdown(question)
-
-            with st.chat_message("assistant"):
-                sql_query = None
-                try:
-                    from agent.sql_agent import ask
-                    from agent.conversation import (
-                        answer_contextual_question,
-                        polish_answer,
-                        resolve_followup,
-                        sanitize_user_answer,
-                    )
-
-                    contextual_answer = answer_contextual_question(
-                        question,
-                        st.session_state.last_query_context,
-                    )
-                    if contextual_answer:
-                        answer = sanitize_user_answer(contextual_answer)
-                        sql_query = None
-                        st.markdown(answer)
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": answer,
-                            "sql": sql_query,
-                        })
-                        st.rerun()
-
-                    resolved_question, rewrite_note = resolve_followup(
-                        question,
-                        st.session_state.last_query_context,
-                    )
-
-                    # Run the agent call in a background thread and show a progress bar.
-                    progress_expander = st.expander("Query progress", expanded=True)
-                    progress_bar = progress_expander.progress(0)
-                    progress_text = progress_expander.empty()
-
-                    result = {"answer": None, "sql": None, "error": None}
-
-                    def run_agent():
-                        try:
-                            a, s = ask(resolved_question)
-                            result["answer"] = a
-                            result["sql"] = s
-                        except Exception as e:
-                            result["error"] = e
-
-                    t = threading.Thread(target=run_agent)
-                    t.start()
-
-                    # Phase-based progress messages (keeps UI in main thread)
-                    phases = [
-                        ("Preparing request", 0),
-                        ("Checking access", 8),
-                        ("Selecting the right metric", 18),
-                        ("Building query", 30),
-                        ("Running query", 50),
-                        ("Reading results", 75),
-                        ("Validating response", 88),
-                        ("Formatting answer", 95),
-                    ]
-
-                    logs = []
-                    start_time = time.time()
-                    current_phase = -1
-
-                    # Poll the thread and update phase messages until finished
-                    while t.is_alive():
-                        # advance phase if needed
-                        next_phase = min(current_phase + 1, len(phases)-1)
-                        # Pick phase based on elapsed proportion - simple paced advancement.
-                        elapsed = time.time() - start_time
-                        # map elapsed to an index by pacing (short heuristic)
-                        if elapsed < 0.6:
-                            idx = 0
-                        elif elapsed < 1.2:
-                            idx = 1
-                        elif elapsed < 1.9:
-                            idx = 2
-                        elif elapsed < 2.6:
-                            idx = 3
-                        elif elapsed < 4.0:
-                            idx = 4
-                        elif elapsed < 5.5:
-                            idx = 5
-                        elif elapsed < 6.0:
-                            idx = 6
-                        else:
-                            idx = min(len(phases)-1, current_phase+1)
-
-                        if idx > current_phase:
-                            current_phase = idx
-                            msg, pct = phases[current_phase]
-                            logs.append(msg)
-                            # render logs inside expander
-                            progress_text.markdown("\n".join([f"- {l}" for l in logs]))
-                            progress_bar.progress(pct)
-
-                        time.sleep(0.25)
-
-                    t.join()
-                    # Agent finished - append final logs and elapsed.
-                    if result["error"]:
-                        raise result["error"]
-
-                    elapsed_total = time.time() - start_time
-                    logs.append(f"Done - results ready ({elapsed_total:.1f}s)")
-                    progress_text.markdown("\n".join([f"- {l}" for l in logs]))
-                    progress_bar.progress(100)
-
-                    answer = result["answer"]
-                    sql_query = result["sql"]
-                    answer = polish_answer(resolved_question, answer, sql_query, rewrite_note)
-                    st.session_state.last_query_context = {
-                        "raw_question": question,
-                        "question": resolved_question,
-                        "answer": answer,
-                        "sql": sql_query,
-                    }
-
-                except Exception:
-                    try:
-                        import os
-                        from langchain_google_genai import ChatGoogleGenerativeAI
-                        from langchain_core.messages import SystemMessage, HumanMessage
-                        with st.spinner("Thinking..."):
-                            llm = ChatGoogleGenerativeAI(
-                                model="gemini-2.5-flash",
-                                google_api_key=os.getenv("GEMINI_API_KEY"),
-                                temperature=0,
-                            )
-                            response = llm.invoke([
-                                SystemMessage(content=(
-                                    "You are Demografy, an AI assistant specialising in Australian suburb demographics. "
-                                    "You have knowledge of ABS census data, suburb statistics, KPIs like diversity index, "
-                                    "prosperity score, rental costs, population density, and more. "
-                                    "Answer questions helpfully and concisely. "
-                                    "Never mention internal table names, column names, SQL, schemas, or implementation details. "
-                                    "Note: live data is not yet connected, so answers are based on general knowledge."
-                                )),
-                                HumanMessage(content=question),
-                            ])
-                        answer = response.content + "\n\n> *Live data not connected yet - this answer is from general AI knowledge, not the Demografy database.*"
-                        answer = sanitize_user_answer(answer)
-                    except Exception as e2:
-                        answer = f"Could not get a response.\n\n**Error:** {str(e2)}"
-
-                st.markdown(answer)
-                if sql_query:
-                    st.markdown("_Query details hidden for privacy._")
-
-            st.session_state.messages.append({"role": "assistant", "content": answer, "sql": sql_query})
-            st.rerun()
+            handle_question(question, user, tier, limit)
