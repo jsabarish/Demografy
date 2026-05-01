@@ -1,16 +1,19 @@
 """
-Demografy — app_v4.py
-Thin orchestrator: configure the page, run chat lifecycle, then render UI.
-Run via: streamlit run app.py
+Demografy - app_v4.py
+
+Thin orchestrator: configure the page, render header + body, then run the
+chat lifecycle inside a fragment so the agent call doesn't fade the rest
+of the page.
+
+Run via: ``streamlit run app.py``.
 """
 
 import streamlit as st
 
 from auth.rbac import is_limit_reached
 from components.body import render_body
-from components.chat_bridge import render_bridge
 from components.chat_engine import maybe_consume_bridge, resolve_pending_question
-from components.chatbox import render_chatbox
+from components.chat_widget import CHAT_WIDGET_KEY, render_chat_widget
 from components.header import render_header
 from components.state import init_session_state
 from components.styles import load_global_css
@@ -18,7 +21,7 @@ from components.styles import load_global_css
 
 st.set_page_config(
     page_title="Demografy v4",
-    page_icon="🏘️",
+    page_icon="\U0001f3d8\ufe0f",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -26,28 +29,43 @@ st.set_page_config(
 init_session_state()
 load_global_css()
 render_header()
+render_body()
 
-user = st.session_state.get("user")
-chat_visible = user is not None
 
-if chat_visible:
-    # Phase 1: forward any new bridge value into the chat engine.
-    maybe_consume_bridge(render_bridge())
+@st.fragment
+def _chat_panel() -> None:
+    """Chat lifecycle, scoped to a fragment.
 
-    tier = (user or {}).get("tier", "free")
-    question_count = int(st.session_state.get("question_count", 0))
-    limit_reached = is_limit_reached(tier, question_count)
-else:
-    limit_reached = False
+    Reruns triggered from inside the fragment (when the user submits a
+    question or when ``ask()`` finishes) stay fragment-scoped, so Streamlit
+    only shows a small running indicator near the chat widget instead of
+    the full-page fade overlay.
 
-render_body(
-    show_chat_widget=chat_visible,
-    messages=st.session_state.get("chat_messages", []),
-    pending=bool(st.session_state.get("chat_pending")),
-    limit_reached=limit_reached,
-)
-render_chatbox()
+    The order matters: we read the latest component value from session
+    state, advance the engine state machine (which may call ``ask()``),
+    and only THEN render the chat widget so the iframe receives the
+    freshest ``messages`` / ``pending`` values in a single push - never
+    a stale empty thread followed by the real one.
+    """
+    # 1. Pick up any submission JS made on the previous render.
+    payload = st.session_state.get(CHAT_WIDGET_KEY)
+    maybe_consume_bridge(payload)
 
-if chat_visible:
-    # Phase 2 runs after render so the user can see immediate pending UI.
+    # 2. If a question is pending, run the agent. Blocks the fragment, but
+    #    not the page; the rest of the UI stays interactive and unfaded.
     resolve_pending_question()
+
+    # 3. Render with the post-update state. Streamlit reuses the same iframe
+    #    across reruns; the JS reconciles the DOM in place (no flicker).
+    user = st.session_state.get("user") or {}
+    tier = user.get("tier", "free")
+    question_count = int(st.session_state.get("question_count", 0))
+    render_chat_widget(
+        messages=st.session_state.get("chat_messages", []),
+        pending=bool(st.session_state.get("chat_pending")),
+        limit_reached=is_limit_reached(tier, question_count),
+    )
+
+
+if st.session_state.get("user"):
+    _chat_panel()

@@ -1,8 +1,9 @@
 """Global CSS for the v4 Streamlit-rendered chrome (header, dropdown, etc.).
 
 Lives separately from rendering so all selector rules have one owner.
-The body iframe owns its own scoped CSS in `components/body.py` and
-`components/chatbox.py`.
+The body iframe owns its own scoped CSS in `components/body.py`, and the
+chat widget iframe owns its own scoped CSS in
+`components/chat_widget/frontend/index.html`.
 """
 
 import streamlit as st
@@ -148,13 +149,53 @@ def load_global_css() -> None:
             .badge-basic { background: linear-gradient(90deg,#8b5cf6,#7c3aed); color:white; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
             .badge-free { background:#f3f4f6; color:#6b7280; padding:2px 9px; border-radius:10px; font-size:0.68rem; font-weight:700; }
 
-            /* Bridge component is functional only: keep it out of layout flow */
-            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_bridge"]) {
+            /* Chat widget custom component: overlay it as a fixed surface in
+               the bottom-right corner, sized just enough for the FAB by
+               default. The body iframe (cross-frame listener) flips the
+               body classes below when the widget is opened or split.       */
+            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"]) {
+                position: fixed !important;
+                bottom: 0;
+                right: 0;
+                width: auto !important;
+                height: auto !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                min-height: 0 !important;
-                height: 0 !important;
-                overflow: hidden !important;
+                z-index: 10000;
+                pointer-events: none;
+                background: transparent !important;
+                box-shadow: none !important;
+                filter: none !important;
+                opacity: 1 !important;
+            }
+            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"]) iframe {
+                width: 110px !important;
+                height: 110px !important;
+                border: none !important;
+                background: transparent !important;
+                pointer-events: auto;
+                transition: width 0.22s ease, height 0.22s ease;
+            }
+            body.chat-active [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"]) iframe {
+                width: min(92vw, 560px) !important;
+                height: min(82vh, 700px) !important;
+            }
+            body.chat-active.chat-split [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"]) iframe {
+                width: 50vw !important;
+                min-width: 360px;
+                max-width: 920px;
+                height: 100vh !important;
+            }
+
+            /* During fragment reruns Streamlit marks old blocks stale and
+               fades them. Keep the chat widget block fully opaque so it
+               never creates a translucent overlap over the page while
+               the bot is "Thinking...". */
+            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"])[data-stale="true"],
+            [data-testid="stElementContainer"]:has(iframe[title*="demografy_chat_widget"]) [data-stale="true"] {
+                opacity: 1 !important;
+                filter: none !important;
+                transform: none !important;
             }
         </style>
         """,

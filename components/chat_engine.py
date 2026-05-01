@@ -1,20 +1,20 @@
-"""Chat lifecycle: take a user question -> show pending -> call agent -> render.
+"""Chat lifecycle: take a user question -> run the agent -> append the reply.
 
-Owns all session-state mutations for ``chat_messages``. The flow is split
-into two phases so the iframe can show a "Thinking..." bubble during the
-potentially slow ``ask()`` call:
+Owns all session-state mutations for ``chat_messages``. Designed to run
+inside an ``@st.fragment`` so the (potentially slow) ``ask()`` call only
+shows a fragment-scoped running indicator, not the page-wide fade overlay.
 
-  Phase 1 (handle_new_question):
-    - Append the user message to chat history.
-    - Apply RBAC: if limit reached, append a single assistant message and stop.
-    - Otherwise mark ``chat_pending`` True (so the next render shows the
-      Thinking bubble) and stash the question for phase 2 to pick up.
-    - Trigger ``st.rerun()`` so the user sees the bubble immediately.
+Two functions form the state machine driven by ``app_v4.py``:
 
-  Phase 2 (resolve_pending_question):
-    - Detect that we have a stashed pending question on this run, call the
-      agent, append the assistant reply, increment ``question_count``, and
-      append a soft warning if the user is approaching their tier limit.
+  * ``maybe_consume_bridge`` - turns a fresh ``{question, ts}`` payload from
+    the chat widget into chat-history + pending-flag mutations. Deduped by
+    timestamp so reruns that surface the same sticky payload don't
+    double-process.
+
+  * ``resolve_pending_question`` - if a pending question is stashed, calls
+    ``agent.sql_agent.ask`` synchronously and appends the assistant reply.
+    The chat widget JS shows the optimistic Thinking bubble, so we don't
+    need any extra rerun/arming step on the Python side.
 """
 
 from typing import Optional
@@ -38,7 +38,7 @@ def _append(role: str, content: str) -> None:
 
 
 def handle_new_question(question: str) -> None:
-    """Phase 1: react to a fresh user question coming from the bridge."""
+    """Append the user message and stash the question for ``resolve``."""
     question = (question or "").strip()
     if not question:
         return
@@ -57,35 +57,21 @@ def handle_new_question(question: str) -> None:
         return
 
     st.session_state.chat_pending = True
-    st.session_state.chat_pending_armed = False
     st.session_state.chat_pending_question = question
-    st.rerun()
 
 
 def resolve_pending_question() -> None:
-    """Phase 2: invoke the agent for the stashed question (if any).
-
-    Called once per Streamlit run before rendering. If a question was stashed
-    by ``handle_new_question``, this clears the pending flag, runs ``ask()``,
-    and appends the assistant reply so the same run can render the result.
-    """
+    """If a question is stashed, invoke the agent and append the reply."""
     if not st.session_state.get("chat_pending"):
         return
 
     question = st.session_state.get("chat_pending_question")
     if not question:
         st.session_state.chat_pending = False
-        st.session_state.chat_pending_armed = False
         return
 
-    # First pending run: render "Thinking..." state, then rerun once more
-    # before doing the expensive agent call. This keeps the UI responsive.
-    if not st.session_state.get("chat_pending_armed"):
-        st.session_state.chat_pending_armed = True
-        st.rerun()
-
-    # Defer the import so we only hit the agent's heavy deps (LangChain,
-    # google-genai, BigQuery) once a real question is in flight.
+    # Defer the import so we only pay LangChain / google-genai / BigQuery
+    # startup cost once a real question is in flight.
     from agent.sql_agent import ask
 
     try:
@@ -93,7 +79,10 @@ def resolve_pending_question() -> None:
     except Exception as exc:
         answer = f"Sorry, I hit an error answering that. ({exc})"
 
-    _append("assistant", answer or "Sorry, I could not format an answer for that query.")
+    _append(
+        "assistant",
+        answer or "Sorry, I could not format an answer for that query.",
+    )
 
     tier = _get_tier()
     question_count = int(st.session_state.get("question_count", 0)) + 1
@@ -101,23 +90,22 @@ def resolve_pending_question() -> None:
 
     if should_show_warning(tier, question_count):
         remaining = max(get_question_limit(tier) - question_count, 0)
+        plural = "s" if remaining != 1 else ""
         _append(
             "assistant",
-            f"Heads up: only {remaining} question{'s' if remaining != 1 else ''} "
-            "left in this session.",
+            f"Heads up: only {remaining} question{plural} left in this session.",
         )
 
     st.session_state.chat_pending = False
-    st.session_state.chat_pending_armed = False
     st.session_state.chat_pending_question = None
-    st.rerun()
 
 
 def maybe_consume_bridge(bridge_value: Optional[dict]) -> None:
-    """Glue between the bridge component and ``handle_new_question``.
+    """Forward a fresh chat-widget payload into ``handle_new_question``.
 
-    The bridge returns the same payload on every rerun until a new message
-    arrives, so we dedupe by timestamp using ``st.session_state.chat_last_ts``.
+    The chat widget's component value is sticky across reruns, so we dedupe
+    by ``ts`` using ``st.session_state.chat_last_ts``. A None payload (no
+    submission yet) is a no-op.
     """
     if not bridge_value:
         return

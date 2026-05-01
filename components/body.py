@@ -1,15 +1,18 @@
 """Hero + mockup body, rendered as an isolated iframe via components.html.
 
-The chat FAB + popup widget is composed in alongside the body so it shares
-the same iframe (its JS toggles the widget locally). The actual chat assets
-live in `components/chatbox.py` to keep ownership clear.
+The body iframe srcDoc is identical on every render. Streamlit reuses the
+iframe instead of reloading it, so the hero/mockup never flicker during
+chat reruns. The chat FAB and panel live in their own custom component
+(``components.chat_widget``), which sits as a fixed overlay on top.
+
+Cross-iframe split mode: the chat widget broadcasts a small postMessage
+when the user toggles "expand". A listener inside this iframe flips the
+``.page.chat-split`` class so the canvas shrinks to half-width, and (when
+allowed by same-origin) flips ``body.chat-active`` / ``body.chat-split``
+on the parent so its CSS can resize the chat widget iframe.
 """
 
-from typing import Iterable, Optional
-
 import streamlit.components.v1 as components
-
-from components.chatbox import get_chatbox_assets
 
 
 _BODY_CSS = """
@@ -388,34 +391,55 @@ _BODY_HTML = """
 """
 
 
-def render_body(
-    show_chat_widget: bool,
-    messages: Optional[Iterable[dict]] = None,
-    pending: bool = False,
-    limit_reached: bool = False,
-) -> None:
-    chat = get_chatbox_assets(
-        show=show_chat_widget,
-        messages=messages,
-        pending=pending,
-        limit_reached=limit_reached,
-    )
+_BODY_SCRIPT = """
+    (function () {
+        // Listen for chat widget mode broadcasts (sibling iframe -> us).
+        // We toggle .page.chat-split on our own DOM (so the canvas shrinks
+        // to half-width) and, opportunistically, mirror chat-active /
+        // chat-split classes onto the parent <body> so the parent stylesheet
+        // can resize the chat widget iframe element.
+        function applyMode(mode) {
+            var split = mode === "split";
+            var active = mode === "open" || mode === "split";
+            var page = document.querySelector(".page");
+            if (page) page.classList.toggle("chat-split", split);
+            try {
+                var parentBody = window.parent && window.parent.document
+                    ? window.parent.document.body
+                    : null;
+                if (parentBody) {
+                    parentBody.classList.toggle("chat-active", active);
+                    parentBody.classList.toggle("chat-split", split);
+                }
+            } catch (_e) { /* cross-origin: ignore */ }
+        }
+        window.addEventListener("message", function (event) {
+            var data = event && event.data;
+            if (!data || typeof data.demografy_chat_mode !== "string") return;
+            applyMode(data.demografy_chat_mode);
+        });
+    })();
+"""
 
-    page_html = f"""
+
+# The body iframe srcDoc is computed once and never changes between renders.
+# This is what lets Streamlit reuse the iframe (no reload, no flicker).
+_BODY_PAGE_HTML = f"""
         <style>
 {_BODY_CSS}
-{chat["css"]}
         </style>
 
 {_BODY_HTML}
-{chat["html"]}
         <script>
-{chat["script"]}
+{_BODY_SCRIPT}
         </script>
-    """
+"""
 
+
+def render_body() -> None:
+    """Render the hero + mockup. Identical srcDoc every render -> no flicker."""
     components.html(
-        page_html,
+        _BODY_PAGE_HTML,
         height=860,
         scrolling=False,
     )
