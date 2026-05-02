@@ -12,7 +12,8 @@ Python -> JS (component args, pushed every Streamlit render):
 
     messages          list[{"role", "content", "image_b64"?}]   thread bubbles
     pending           bool                        Thinking spinner on?
-    limit_reached     bool                        hide input when True
+    limit_reached     bool                        disable input + show
+                                                  cooldown banner when True
     threads           list[{"thread_id", ...}]    newest-first list for
                                                   the View overlay
     active_thread_id  str | None                  highlights the current
@@ -20,6 +21,10 @@ Python -> JS (component args, pushed every Streamlit render):
     suggestions       list[str]                   follow-up question chips
                                                   shown under the latest
                                                   assistant bubble
+    cooldown_until_ms int                         epoch ms when the limit
+                                                  cooldown ends; 0 means no
+                                                  active cooldown. Drives
+                                                  the live countdown label.
 
 JS reconciles the DOM in place (no innerHTML rewrite, no iframe reload).
 
@@ -66,6 +71,7 @@ def render_chat_widget(
     threads: Optional[Iterable[dict]] = None,
     active_thread_id: Optional[str] = None,
     suggestions: Optional[Iterable[str]] = None,
+    cooldown_until_ms: int = 0,
     key: str = CHAT_WIDGET_KEY,
 ) -> Optional[dict]:
     """Render the persistent chat widget.
@@ -81,6 +87,7 @@ def render_chat_widget(
         threads=list(threads or []),
         active_thread_id=active_thread_id or "",
         suggestions=[str(s) for s in (suggestions or []) if s],
+        cooldown_until_ms=int(cooldown_until_ms or 0),
         default=None,
         key=key,
     )

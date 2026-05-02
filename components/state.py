@@ -16,6 +16,7 @@ file - the file appears on the first ``append_message`` call.
 
 import streamlit as st
 
+from auth.cooldown import get_cooldown_until
 from auth.rbac import get_user
 from chat_history.storage import load_history, new_thread_id
 from chat_history.thread_list import list_threads
@@ -33,6 +34,7 @@ SESSION_DEFAULTS = [
     ("chat_thread_id", None),
     ("chat_suggestions", []),
     ("chat_last_query", None),
+    ("chat_cooldown_until", None),
 ]
 
 
@@ -88,6 +90,14 @@ def hydrate_chat_history(user_id: str) -> None:
     # session. They only appear after a fresh answer this session.
     st.session_state.chat_suggestions = []
     st.session_state.chat_last_query = None
+
+    # Restore any active cooldown so a hard refresh keeps the timer
+    # ticking. ``chat_engine`` expires it on the next interaction if the
+    # timestamp is already in the past.
+    try:
+        st.session_state.chat_cooldown_until = get_cooldown_until(user_id)
+    except Exception:
+        st.session_state.chat_cooldown_until = None
 
 
 def init_session_state() -> None:

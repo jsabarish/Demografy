@@ -21,11 +21,14 @@ Agent context (``last_n_turns``) is always scoped to ``chat_thread_id``
 so follow-ups never bleed across separate conversations.
 """
 
+import time
 from typing import Optional
 
 import streamlit as st
 
+from auth.cooldown import clear_cooldown, set_cooldown_until
 from auth.rbac import (
+    COOLDOWN_SECONDS,
     get_question_limit,
     is_limit_reached,
     should_show_warning,
@@ -74,6 +77,30 @@ def _append(
     if image_b64:
         msg["image_b64"] = image_b64
     st.session_state.chat_messages.append(msg)
+
+
+def _check_and_expire_cooldown() -> None:
+    """If the active cooldown has elapsed, reset the question count.
+
+    This is what gives the user a fresh "mini-session" 30 seconds after
+    they hit the tier cap: ``question_count`` goes back to zero and we
+    drop both the in-session and on-disk cooldown markers. Called from
+    every entry point that can submit a question so the next interaction
+    after the timer never has to wait for an extra rerun.
+    """
+    cooldown_until = st.session_state.get("chat_cooldown_until")
+    if not cooldown_until:
+        return
+    if time.time() < float(cooldown_until):
+        return
+    st.session_state.chat_cooldown_until = None
+    st.session_state.question_count = 0
+    user_id = _get_user_id()
+    if user_id:
+        try:
+            clear_cooldown(user_id)
+        except Exception:
+            pass
 
 
 def _persist(
@@ -178,8 +205,13 @@ def handle_new_question(question: str) -> None:
     if not question:
         return
 
+    # If the cooldown has just expired, recover the user's quota before
+    # we evaluate the limit on this submission.
+    _check_and_expire_cooldown()
+
     tier = _get_tier()
     question_count = int(st.session_state.get("question_count", 0))
+    cooldown_until = st.session_state.get("chat_cooldown_until")
 
     # Wipe any chips from the previous turn the moment the user submits
     # something else (typed or chip-clicked). Prevents the old suggestions
@@ -187,15 +219,18 @@ def handle_new_question(question: str) -> None:
     st.session_state.chat_suggestions = []
     st.session_state.chat_last_query = None
 
+    # Defensive: while a cooldown is active, drop the submission silently.
+    # The widget should already be disabled, so this only fires if a stale
+    # bridge payload sneaks through.
+    if cooldown_until and time.time() < float(cooldown_until):
+        return
+
     _append("user", question)
     _persist("user", question)
 
     if is_limit_reached(tier, question_count):
-        _append(
-            "assistant",
-            "You\u2019ve reached your question limit for this session. "
-            "Upgrade your tier to continue asking questions.",
-        )
+        # The visible cooldown banner replaces the old assistant nag;
+        # we keep this state silent so the chat doesn't get spammed.
         return
 
     st.session_state.chat_pending = True
@@ -204,6 +239,10 @@ def handle_new_question(question: str) -> None:
 
 def resolve_pending_question() -> None:
     """If a question is stashed, invoke the agent and append the reply."""
+    # Defensive: expire any stale cooldown before evaluating limits below
+    # so a question that was queued just as the timer ended still runs.
+    _check_and_expire_cooldown()
+
     if not st.session_state.get("chat_pending"):
         return
 
@@ -275,7 +314,19 @@ def resolve_pending_question() -> None:
     question_count = int(st.session_state.get("question_count", 0)) + 1
     st.session_state.question_count = question_count
 
-    if should_show_warning(tier, question_count):
+    # Hitting the tier cap arms the cooldown. We persist it so a hard
+    # refresh keeps the timer ticking; the engine resets the count when
+    # it expires via ``_check_and_expire_cooldown``.
+    if is_limit_reached(tier, question_count):
+        cooldown_until = time.time() + COOLDOWN_SECONDS
+        st.session_state.chat_cooldown_until = cooldown_until
+        user_id = _get_user_id()
+        if user_id:
+            try:
+                set_cooldown_until(user_id, cooldown_until)
+            except Exception:
+                pass
+    elif should_show_warning(tier, question_count):
         remaining = max(get_question_limit(tier) - question_count, 0)
         plural = "s" if remaining != 1 else ""
         # Soft UI nudge only; intentionally not persisted to the transcript.

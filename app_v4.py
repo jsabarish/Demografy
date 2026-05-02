@@ -8,6 +8,7 @@ of the page.
 Run via: ``streamlit run app.py``.
 """
 
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -81,13 +82,22 @@ def _chat_panel() -> None:
         except Exception:
             threads = []
 
+    # Block submissions during an active cooldown even if ``question_count``
+    # was reset elsewhere. The widget keeps the input visible but disabled
+    # and runs its own setInterval against ``cooldown_until_ms``.
+    cooldown_until = st.session_state.get("chat_cooldown_until")
+    cooldown_active = bool(cooldown_until and time.time() < float(cooldown_until))
+    limit_reached = is_limit_reached(tier, question_count) or cooldown_active
+    cooldown_until_ms = int(float(cooldown_until) * 1000) if cooldown_until else 0
+
     render_chat_widget(
         messages=st.session_state.get("chat_messages", []),
         pending=bool(st.session_state.get("chat_pending")),
-        limit_reached=is_limit_reached(tier, question_count),
+        limit_reached=limit_reached,
         threads=threads,
         active_thread_id=st.session_state.get("chat_thread_id"),
         suggestions=st.session_state.get("chat_suggestions", []),
+        cooldown_until_ms=cooldown_until_ms,
     )
 
 

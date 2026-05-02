@@ -14,6 +14,9 @@ Tiers:
 No passwords — login is by user_id only (as per project spec).
 """
 
+import time
+from typing import Optional
+
 from db.bigquery_client import run_query
 
 # Question limits for each tier
@@ -29,6 +32,11 @@ TIER_WARNINGS = {
     "basic": 15,  # warn at question 15 (5 left)
     "pro": 45,    # warn at question 45 (5 left)
 }
+
+# Length of the post-limit cooldown. After it elapses the engine resets
+# ``question_count`` to zero so the user gets a fresh "mini-session"
+# without us mutating tier limits. Tunable via this single constant.
+COOLDOWN_SECONDS = 30
 
 
 def get_user(user_id: str) -> dict | None:
@@ -87,6 +95,21 @@ def is_limit_reached(tier: str, question_count: int) -> bool:
         bool: True if limit reached (block the input), False if still under limit
     """
     return question_count >= get_question_limit(tier)
+
+
+def seconds_remaining(cooldown_until: Optional[float]) -> int:
+    """How many whole seconds remain on a cooldown timestamp.
+
+    Returns ``0`` when ``cooldown_until`` is ``None`` or already in the
+    past. Always returns a non-negative integer so the UI can render the
+    label without extra clamping.
+    """
+    if not cooldown_until:
+        return 0
+    remaining = float(cooldown_until) - time.time()
+    if remaining <= 0:
+        return 0
+    return int(remaining + 0.999)  # round up so "0.4s left" still shows "1s"
 
 
 def should_show_warning(tier: str, question_count: int) -> bool:

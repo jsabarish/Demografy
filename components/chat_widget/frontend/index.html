@@ -234,6 +234,9 @@
             border-top: 1px solid #fecaca;
             flex-shrink: 0;
         }
+        .cw-limit-note .cw-cooldown-secs {
+            font-variant-numeric: tabular-nums;
+        }
 
         /* ---- Suggested follow-up chips ---------------------------------- */
         .cw-suggestions {
@@ -382,7 +385,9 @@
         <input id="cw-input" class="cw-input" placeholder="Ask about Australian suburb data..." autocomplete="off" />
         <button id="cw-send" class="cw-send" type="button" aria-label="Send">&#10137;</button>
     </div>
-    <div id="cw-limit-note" class="cw-limit-note">You&#8217;ve reached your question limit for this session.</div>
+    <div id="cw-limit-note" class="cw-limit-note">
+        <span id="cw-limit-text">You&#8217;ve reached your question limit for this session.</span>
+    </div>
 
     <div id="cw-history-panel" class="cw-history-panel" hidden>
         <div class="cw-history-header">
@@ -431,6 +436,7 @@
     var thread = document.getElementById("cw-thread");
     var inputWrap = document.getElementById("cw-input-wrap");
     var limitNote = document.getElementById("cw-limit-note");
+    var limitText = document.getElementById("cw-limit-text");
 
     var isOpen = false;
     var isSplit = false;
@@ -439,6 +445,58 @@
     var lastActiveThreadId = ""; // id of the thread we last reconciled to
     var historyVisible = false;
     var resetOnNextOpen = false;
+
+    // ---- Cooldown ticker ----------------------------------------------------
+    // Drives the live "You can ask again in Xs" label without waiting for
+    // Streamlit to rerun. The Python side is the source of truth: when the
+    // user submits after the timer ends, the engine resets question_count
+    // and clears the cooldown, so a stale clock here is harmless.
+
+    var cooldownTickerId = null;
+    var cooldownUntilMs = 0;
+    var cooldownActive = false;
+
+    function _formatLimitMessage(remainingSeconds) {
+        if (remainingSeconds > 0) {
+            return (
+                "You have reached the limit for this session. " +
+                "You can ask again in " +
+                '<span class="cw-cooldown-secs">' + remainingSeconds + "s</span>."
+            );
+        }
+        return "Cooldown finished - you can ask again now.";
+    }
+
+    function _renderCooldownLabel() {
+        if (!limitText) return;
+        var remainingMs = Math.max(0, cooldownUntilMs - Date.now());
+        var remaining = Math.ceil(remainingMs / 1000);
+        limitText.innerHTML = _formatLimitMessage(remaining);
+        if (remainingMs <= 0) {
+            stopCooldownTicker();
+            // Re-enable the input optimistically. The next submit triggers
+            // server-side cooldown expiry and quota reset.
+            if (input) input.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
+            if (input) input.placeholder = "Ask about Australian suburb data...";
+        }
+    }
+
+    function startCooldownTicker(untilMs) {
+        cooldownUntilMs = Number(untilMs) || 0;
+        cooldownActive = true;
+        _renderCooldownLabel();
+        if (cooldownTickerId !== null) return;
+        cooldownTickerId = setInterval(_renderCooldownLabel, 1000);
+    }
+
+    function stopCooldownTicker() {
+        cooldownActive = false;
+        if (cooldownTickerId !== null) {
+            clearInterval(cooldownTickerId);
+            cooldownTickerId = null;
+        }
+    }
 
     // ---- Frame size signaling ------------------------------------------------
     // Tell the parent body which mode we're in. The parent CSS resizes our
@@ -802,6 +860,7 @@
         var threads = (args && Array.isArray(args.threads)) ? args.threads : [];
         var activeId = (args && args.active_thread_id) || "";
         var suggestions = (args && Array.isArray(args.suggestions)) ? args.suggestions : [];
+        var serverCooldownUntilMs = Number((args && args.cooldown_until_ms) || 0);
 
         // If the active thread changed (new chat or switched thread), wipe
         // the DOM thread first so we never paint the old conversation
@@ -816,12 +875,18 @@
         // so opening it is instant).
         renderThreadList(threads, activeId);
 
-        // Input area vs limit note.
+        // Input area vs limit note. We deliberately keep the input row
+        // visible so the user always sees where to type; the cooldown
+        // banner sits below it with a live countdown.
+        inputWrap.style.display = "";
         if (limitReached) {
-            inputWrap.style.display = "none";
+            input.disabled = true;
+            sendBtn.disabled = true;
+            input.placeholder = "Limit reached - please wait...";
             limitNote.style.display = "";
+            startCooldownTicker(serverCooldownUntilMs || Date.now());
         } else {
-            inputWrap.style.display = "";
+            stopCooldownTicker();
             limitNote.style.display = "none";
             input.disabled = pending;
             sendBtn.disabled = pending;
