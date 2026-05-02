@@ -104,6 +104,7 @@ def start_new_chat() -> None:
     st.session_state.chat_messages = []
     st.session_state.chat_pending = False
     st.session_state.chat_pending_question = None
+    st.session_state.chat_suggestions = []
 
 
 def open_thread(thread_id: str) -> None:
@@ -133,6 +134,7 @@ def open_thread(thread_id: str) -> None:
     ]
     st.session_state.chat_pending = False
     st.session_state.chat_pending_question = None
+    st.session_state.chat_suggestions = []
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +149,11 @@ def handle_new_question(question: str) -> None:
 
     tier = _get_tier()
     question_count = int(st.session_state.get("question_count", 0))
+
+    # Wipe any chips from the previous turn the moment the user submits
+    # something else (typed or chip-clicked). Prevents the old suggestions
+    # from briefly hanging under the new bubble while the agent thinks.
+    st.session_state.chat_suggestions = []
 
     _append("user", question)
     _persist("user", question)
@@ -195,6 +202,20 @@ def resolve_pending_question() -> None:
     final_answer = answer or "Sorry, I could not format an answer for that query."
     _append("assistant", final_answer)
     _persist("assistant", final_answer, sql=sql_query)
+
+    # Best-effort chip generation. Failure (no API key, slow network,
+    # timeout, garbage output) leaves chips empty - the chat itself is
+    # already complete by this point.
+    try:
+        from agent.suggestions import generate_suggestions
+
+        st.session_state.chat_suggestions = generate_suggestions(
+            question=question,
+            answer=final_answer,
+            history=history,
+        )
+    except Exception:
+        st.session_state.chat_suggestions = []
 
     tier = _get_tier()
     question_count = int(st.session_state.get("question_count", 0)) + 1

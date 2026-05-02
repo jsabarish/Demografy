@@ -31,6 +31,7 @@ SESSION_DEFAULTS = [
     ("chat_pending_question", None),
     ("chat_last_ts", None),
     ("chat_thread_id", None),
+    ("chat_suggestions", []),
 ]
 
 
@@ -73,6 +74,10 @@ def hydrate_chat_history(user_id: str) -> None:
     else:
         st.session_state.chat_thread_id = new_thread_id()
         st.session_state.chat_messages = []
+
+    # Suggestions are ephemeral; never restore stale chips from a prior
+    # session. They only appear after a fresh answer this session.
+    st.session_state.chat_suggestions = []
 
 
 def init_session_state() -> None:

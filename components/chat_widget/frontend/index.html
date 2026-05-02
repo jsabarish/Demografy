@@ -224,6 +224,32 @@
             flex-shrink: 0;
         }
 
+        /* ---- Suggested follow-up chips ---------------------------------- */
+        .cw-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 4px 0 2px;
+            align-self: flex-start;
+            max-width: 92%;
+        }
+        .cw-chip {
+            border: 1px solid #d7c4ff;
+            background: #f6efff;
+            color: #5e17eb;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            line-height: 1.2;
+            transition: background 0.12s ease, transform 0.08s ease;
+        }
+        .cw-chip:hover { background: #ede0ff; }
+        .cw-chip:active { transform: translateY(1px); }
+        .cw-chip[disabled] { opacity: 0.55; cursor: default; }
+
         /* ---- Past chats overlay ----------------------------------------- */
         .cw-history-panel {
             position: absolute;
@@ -482,6 +508,9 @@
         renderedMsgCount = 0;
         showWelcome();
         hideHistoryPanel();
+        // showWelcome() already wipes the thread (including chips) but be
+        // explicit so future refactors of showWelcome don't regress this.
+        // No-op when chips weren't present.
         if (input) {
             input.disabled = false;
             input.value = "";
@@ -620,12 +649,19 @@
 
     // ---- Optimistic send ----------------------------------------------------
 
-    function sendQuestion() {
-        if (!input || input.disabled) return;
-        var value = (input.value || "").trim();
+    function sendQuestionText(value) {
+        // Shared submit path for typed questions and chip clicks. The
+        // chip handler bypasses the input element entirely, so we read
+        // the value as an argument instead of from input.value.
+        value = (value == null ? "" : String(value)).trim();
         if (!value) return;
-        input.value = "";
-        var ts = Date.now();
+        if (input && input.disabled) return;
+
+        // Wipe any chips immediately - Python will replace them after the
+        // next answer. Doing this locally avoids a stale chip flashing
+        // briefly while the agent is thinking.
+        var existing = thread.querySelector(".cw-suggestions");
+        if (existing) existing.remove();
 
         // Optimistic: show user bubble + Thinking immediately, regardless of
         // when Python's rerun lands. The reconcile() pass will leave these
@@ -636,15 +672,24 @@
         if (!document.getElementById("cw-thinking")) {
             thread.appendChild(makeThinkingNode());
         }
-        input.disabled = true;
-        sendBtn.disabled = true;
-        input.placeholder = "Thinking...";
+        if (input) {
+            input.disabled = true;
+            input.placeholder = "Thinking...";
+        }
+        if (sendBtn) sendBtn.disabled = true;
         scrollBottom();
 
         send(SET_VALUE, {
-            value: { action: "question", question: value, ts: ts },
+            value: { action: "question", question: value, ts: Date.now() },
             dataType: "json"
         });
+    }
+
+    function sendQuestion() {
+        if (!input || input.disabled) return;
+        var value = input.value || "";
+        input.value = "";
+        sendQuestionText(value);
     }
 
     sendBtn.addEventListener("click", sendQuestion);
@@ -655,6 +700,41 @@
         }
     });
 
+    // ---- Suggested follow-up chips ------------------------------------------
+
+    function clearSuggestions() {
+        var existing = thread.querySelector(".cw-suggestions");
+        if (existing) existing.remove();
+    }
+
+    function renderSuggestions(list, pending, limitReached) {
+        clearSuggestions();
+        if (pending || limitReached) return;
+        if (!Array.isArray(list) || list.length === 0) return;
+
+        // Only show chips when the latest visible bubble is an assistant
+        // reply. If the trailing node is a user bubble (e.g. mid-flight
+        // optimistic state), suppress chips - they belong with the answer.
+        var lastMsg = thread.querySelector(".cw-msg:last-of-type");
+        if (!lastMsg || !lastMsg.classList.contains("assistant")) return;
+
+        var box = document.createElement("div");
+        box.className = "cw-suggestions";
+        list.slice(0, 3).forEach(function (text) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "cw-chip";
+            chip.textContent = String(text);
+            chip.addEventListener("click", function () {
+                if (input && input.disabled) return;
+                sendQuestionText(chip.textContent);
+            });
+            box.appendChild(chip);
+        });
+        thread.appendChild(box);
+        scrollBottom();
+    }
+
     // ---- Reconcile DOM with Python args -------------------------------------
 
     function reconcile(args) {
@@ -663,6 +743,7 @@
         var limitReached = !!(args && args.limit_reached);
         var threads = (args && Array.isArray(args.threads)) ? args.threads : [];
         var activeId = (args && args.active_thread_id) || "";
+        var suggestions = (args && Array.isArray(args.suggestions)) ? args.suggestions : [];
 
         // If the active thread changed (new chat or switched thread), wipe
         // the DOM thread first so we never paint the old conversation
@@ -728,6 +809,11 @@
             // Keep Thinking after newly appended messages.
             thread.appendChild(thinking);
         }
+
+        // Suggested follow-up chips: rebuilt on every reconcile so they
+        // always sit underneath the latest assistant bubble. Clearing
+        // first avoids duplicates after thread switches or rebuilds.
+        renderSuggestions(suggestions, pending, limitReached);
 
         scrollBottom();
     }

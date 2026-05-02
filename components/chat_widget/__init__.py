@@ -17,6 +17,9 @@ Python -> JS (component args, pushed every Streamlit render):
                                                   the View overlay
     active_thread_id  str | None                  highlights the current
                                                   thread in the list
+    suggestions       list[str]                   follow-up question chips
+                                                  shown under the latest
+                                                  assistant bubble
 
 JS reconciles the DOM in place (no innerHTML rewrite, no iframe reload).
 
@@ -25,6 +28,9 @@ JS -> Python (one of three sticky payload shapes via setComponentValue):
     { "action": "question",     "question": str,    "ts": int }
     { "action": "new_chat",                           "ts": int }
     { "action": "open_thread",  "thread_id": str,   "ts": int }
+
+Chip clicks reuse the ``"question"`` action with the chip text as the
+``question`` value, so the engine path is identical to the typed flow.
 
 ``maybe_consume_bridge`` in ``chat_engine.py`` dedupes on ``ts`` and
 dispatches on ``action``.
@@ -57,6 +63,7 @@ def render_chat_widget(
     *,
     threads: Optional[Iterable[dict]] = None,
     active_thread_id: Optional[str] = None,
+    suggestions: Optional[Iterable[str]] = None,
     key: str = CHAT_WIDGET_KEY,
 ) -> Optional[dict]:
     """Render the persistent chat widget.
@@ -71,6 +78,7 @@ def render_chat_widget(
         limit_reached=bool(limit_reached),
         threads=list(threads or []),
         active_thread_id=active_thread_id or "",
+        suggestions=[str(s) for s in (suggestions or []) if s],
         default=None,
         key=key,
     )

@@ -79,6 +79,7 @@ def _chat_panel() -> None:
         limit_reached=is_limit_reached(tier, question_count),
         threads=threads,
         active_thread_id=st.session_state.get("chat_thread_id"),
+        suggestions=st.session_state.get("chat_suggestions", []),
     )
 
 
